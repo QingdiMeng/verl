@@ -58,6 +58,17 @@ def test_tracking_del_suppresses_backend_finish_errors(caplog):
     assert "Failed to finish wandb logger cleanly." in caplog.text
 
 
+def test_tracking_finish_finalizes_mlflow_once():
+    tracking = Tracking.__new__(Tracking)
+    tracking.logger = {"mlflow": MagicMock()}
+    tracking._finished = False
+
+    tracking.finish()
+    tracking.finish()
+
+    tracking.logger["mlflow"].finish.assert_called_once()
+
+
 def test_dapo_filtered_reward_table_logs_incremental_rows():
     mock_wandb = MagicMock()
     mock_wandb.run = object()

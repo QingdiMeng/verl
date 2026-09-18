@@ -627,8 +627,10 @@ class SGLangHttpServer:
             "sampling_params": sampling_params,
             "return_logprob": return_logprob,
             "image_data": image_data,
-            # TODO: support video input for sglang
-            # video_data=video_data,
+            # video_data holds processor features ({"format": "processor_output", ...}) built by
+            # the agent loop, not raw frames: SGLang's video_data only accepts a path/url/base64
+            # or a dict. Dropping it silently makes the model answer video questions blind.
+            "video_data": video_data,
         }
 
         if prompt_logprobs is not None:
@@ -885,12 +887,21 @@ class SGLangReplica(RolloutReplica):
             else f"{server_address}:{server_port}"
         )
 
-    async def abort_all_requests(self):
+    async def abort_all_requests(self, reject_request: bool = False):
         """Abort all ongoing generation requests on the primary server.
 
         SGLang control RPCs are only served by the node-rank 0 server for a
         multi-node replica, so avoid broadcasting this call to every server.
         """
+        if reject_request:
+            # SGLang blocks new requests inside its own tokenizer manager, so verl has no
+            # admission point to fail them at. Requests routed here after the pause wait
+            # until continue_generation(). TODO: add a verl-side gate in front of
+            # tokenizer_manager.pause_generation() so this replica can reject them too.
+            logger.warning(
+                "SGLang rollout ignores reject_request=True: requests arriving while generation "
+                "is paused will wait for the next resume_generation() instead of failing over."
+            )
         await self.servers[0].abort_all_requests.remote()
 
     async def resume_generation(self):
